@@ -1,0 +1,830 @@
+/**
+* YAPL grammar file for JavaCC >= 5.0 - reduced codegen version provided to students.
+ * The grammar does not include arrays and records, which could be added by students.
+ * <pre>
+ * Usage: java yapl.version.symbolcheck.YAPL [-o out_file] yapl_source_file
+ * </pre>
+ * (C) AAU/ITEC, Mario Taschwer, 2021.
+ */
+
+options {
+LOOKAHEAD=1;
+}
+
+PARSER_BEGIN(YAPL)
+package yapl.version.codegen;
+import yapl.interfaces.*;
+import yapl.lib.*;
+import java.io.*;
+import java.util.Stack;
+import java.util.LinkedList;
+import java.util.List;
+
+public class YAPL {
+    protected static Symboltable symboltable = new yapl.impl.Symboltable();
+    protected static yapl.interfaces.CodeGen codegen;
+    
+    // accessed by TokenMgrError and ParseException
+    static String progName = "<unknown>";
+
+    /** Set to <code>true</code> only if compiling the run-time library. */
+    protected static boolean bootstrap = false;
+    
+    /**
+     * Usage: java YAPL [-o out_file] yapl_source_file.
+     * Required Java system properties:
+     *     yapl.predefined.src - path to YAPL declarations of predefined procedures
+     *     yapl.runtimelib.asm - path to MIPS assembler file containing pre-compiled code of runtime library
+     *                           (may be empty)
+     *     yapl.runtimelib.src - path to YAPL source code of runtime library
+     *                           (required / used only if yapl.runtimelib.asm is empty)
+     * Exit code: 0 on success,
+     *            1 on I/O error,
+     *            2 on usage error.
+     */
+    public static void main(String args[])
+    {
+        YAPL compiler = null;
+        try
+        {
+            String srcfile, outfile = null;
+            PrintStream outstream = System.out;
+            boolean error = false;
+            int i = 0;
+            /* parse command-line */
+            for (; i < args.length && args [i].charAt(0) == '-'; i++)
+            {
+                if (args [i].equals("-o") && ++i < args.length) 
+                    outfile = args [i];
+                else
+                {
+                    error = true;
+                    break;
+                }
+            }
+            if (error || i + 1 != args.length)
+            {
+                System.err.println("Usage: java YAPL [-o out_file] yapl_source_file");
+                System.err.println("If -o option is not given, output will be written to stdout.");
+                System.exit(2);
+            }
+            srcfile = args [i];
+            /* initialize code generator with output stream */
+            if (outfile != null)
+            {
+                try
+                {
+                    outstream = new PrintStream(outfile);
+                }
+                catch (FileNotFoundException e)
+                {
+                    System.err.println("Cannot write to " + outfile + ":" + e.getMessage());
+                    System.exit(1);
+                }
+            }
+            String predefinedAsmFile = System.getProperty("yapl.predefined.asm");
+            String runtimelibAsmFile = System.getProperty("yapl.runtimelib.asm");
+            yapl.impl.BackendMIPS backend = new yapl.impl.BackendMIPS(outstream, predefinedAsmFile, runtimelibAsmFile);
+            codegen = new CodeGenAsmRM(backend);
+            /* initialize compiler with predefined functions */
+            compiler = new YAPL(new FileInputStream(System.getProperty("yapl.predefined.src")));
+            compiler.PredefDecl();
+            /* compile run-time library if runtimelibAsmFile is not available */
+            if (runtimelibAsmFile == null || runtimelibAsmFile.length() == 0) {
+                bootstrap = true;
+                compiler.ReInit(new FileInputStream(System.getProperty("yapl.runtimelib.src")));
+                compiler.Procedure();
+            }
+            /* compile input file */
+            bootstrap = false;
+            compiler.ReInit(new FileInputStream(srcfile));
+            compiler.Program();
+            CompilerMessage.printOK(progName);
+            if (outfile != null)
+            {
+                outstream.close();
+                System.out.println("YAPL program " + progName + " has been compiled to " + outfile);
+            }
+        } catch (TokenMgrError e) {
+            yapl.lib.CompilerMessage.printError((CompilerError) e, progName);
+        } catch (ParseException e) {
+            yapl.lib.CompilerMessage.printError((CompilerError) e, progName);
+        } catch (YAPLException e) {
+            if (compiler != null) {
+                e.setLastToken((yapl.interfaces.Token) compiler.token);
+            }
+            CompilerMessage.printError(e, progName);
+        } catch (IOException e) {
+            System.err.println(e);
+            System.exit(1);
+        }
+        System.exit(0); // OK
+    }
+
+    private static void checkArgument(Symbol proc, int argc, Attrib arg, Symbol param)
+    throws YAPLException
+    {
+        if (param == null || !param.getType().isCompatible(arg.getType()))
+            throw new YAPLException(CompilerError.ArgNotApplicable, proc, argc);
+    }
+}
+
+PARSER_END(YAPL)
+
+SKIP :
+{
+ 	" "
+|	"\r"
+|	"\t"
+|	"\n"
+}
+
+TOKEN :
+{
+/* Separators */
+    < SEMICOLON: ";" >
+|   < COMMA: "," >
+|   < DOT: "." >
+|   < ASSIGN_CONST: "=" >
+|   < ASSIGN: ":=" >
+/* Operator Symbols */
+|   < LESS: "<" >
+|   < LESS_EQUAL: "<=" >
+|   < GREATER: ">" >
+|   < GREATER_EQUAL: ">=" >
+|   < EQUAL: "==" >
+|   < NOT_EQUAL: "!=" >
+|   < PLUS: "+" >
+|   < MINUS: "-" >
+|   < MULT: "*" >
+|   < DIV: "/" >
+|   < MOD: "%" >
+|   < SHARP: "#" >
+/* Parentheses and Brackets */
+|   < PAR_LEFT: "(" >
+|   < PAR_RIGHT: ")" >
+|   < BRACKET_LEFT: "[" >
+|   < BRACKET_RIGHT: "]" >
+/* Keywords */
+|   < AND: "And" >
+|   < NEW: "new" >
+|   < OR: "Or" >
+|   < TRUE: "True" >
+|   < FALSE: "False" >
+|   < IF: "If" >
+|   < THEN: "Then" >
+|   < ELSE: "Else" >
+|   < ENDIF: "EndIf" >
+|   < WHILE: "While" >
+|   < DO: "Do" >
+|   < ENDWHILE: "EndWhile" >
+|   < RETURN: "Return" >
+|   < WRITE: "Write" >
+|   < INT: "int" >
+|   < BOOL: "bool" >
+|   < VOID: "void" >
+|   < CONST: "Const" >
+|   < RECORD: "Record" >
+|   < ENDRECORD: "EndRecord" >
+|   < DECL: "Declare" >
+|   < BEGIN: "Begin" >
+|   < END: "End" >
+|   < REF: "ref" >
+|   < PROC: "Procedure" >
+|   < PROGRAM: "Program" >
+/* Literals */
+|   < #LETTER: ["a"-"z", "A"-"Z", "_"] >
+|   < #DIGIT: ["0" - "9"] >
+|   < #OTHERCHAR: ["+", "-", "*", "/", ".", ",", ";", ":", "!",
+                   "?", "=", "#", "%", "<", ">", "$", "(", ")",
+                   "[", "]", "{", "}", "\\", "@", "&", "^", "|"] >
+|   < IDENT: <LETTER> (<LETTER> | <DIGIT>)* >
+|   < NUMBER: (<DIGIT>)+ >
+|   < STRING_LITERAL: "\"" (" " | <LETTER> | <DIGIT> | <OTHERCHAR>)* "\"" >
+}
+
+SPECIAL_TOKEN:
+{
+	< COMMENT: "/*" ( ~[ "*" ] | "*" ~[ "/" ] )* "*/" >
+}
+
+/* RelOp = "<" | "<=" | ">=" | ">" . */
+Token RelOp() throws YAPLException:
+{
+    Token tok;
+}
+{
+	(
+	  tok = <LESS> | tok = <LESS_EQUAL>
+	| tok = <GREATER_EQUAL> | tok = <GREATER>
+	) { return tok; }
+}
+
+/* EqualOp = "==" | "!=" . */
+Token EqualOp() throws YAPLException :
+{
+	Token tok;
+}
+{
+	( tok = <EQUAL> | tok = <NOT_EQUAL> )
+	{ return tok; }
+}
+
+/* AddOp = "+" | "-" . */
+Token AddOp() throws YAPLException :
+{
+	Token tok;
+}
+{
+	( tok = <PLUS> | tok = <MINUS> )
+	{ return tok; }
+}
+
+/* MulOp = "*" | "/" | "%" . */
+Token MulOp() throws YAPLException :
+{
+	Token tok;
+}
+{
+	( tok = <MULT> | tok = <DIV> | tok = <MOD> )
+	{ return tok; }
+}
+
+/* Literal = "True" | "False" | number . */
+Attrib Literal() throws YAPLException :
+{ Token tok; }
+{
+	<TRUE> { return new yapl.impl.Attrib(Attrib.Constant, new BoolType(true)); }
+	| <FALSE> { return new yapl.impl.Attrib(Attrib.Constant, new BoolType(false)); }
+	| tok = <NUMBER>
+		{
+			return new yapl.impl.Attrib(Attrib.Constant,
+			                            new IntType(Integer.parseInt(tok.image)));
+		}
+}
+
+/* PrimaryExpr = Literal | "(" Expr ")" | ProcedureCall | ident . */
+Attrib PrimaryExpr() throws YAPLException :
+{
+	Token tok;
+	Symbol sym;
+	Attrib attr = null;
+}
+{
+	( attr = Literal()
+	| <PAR_LEFT> attr = Expr() <PAR_RIGHT>
+	| LOOKAHEAD(2) attr = ProcedureCall(true)
+	| tok = <IDENT>
+		{
+			sym = symboltable.lookup(tok.image);
+			if (sym == null)
+				throw new YAPLException(CompilerError.IdentNotDecl, tok);
+			if (sym.getKind() == Symbol.Program || sym.getKind() == Symbol.Procedure)
+				throw new YAPLException(CompilerError.SymbolIllegalUse, sym);
+			attr = new yapl.impl.Attrib(sym);
+		}
+	) {
+	       return attr;
+	  }
+}
+
+/* UnaryExpr = [AddOp] PrimaryExpr . */
+Attrib UnaryExpr() throws YAPLException :
+{
+	Token op = null;
+	Attrib x;
+}
+{
+	[ op = AddOp() ]
+	x = PrimaryExpr()
+	{
+		if (op != null)
+		    codegen.op1(op, x);
+		return x;
+	}
+}
+
+/* MulExpr = UnaryExpr { MulOp UnaryExpr } . */
+Attrib MulExpr() throws YAPLException :
+{
+	Attrib x, y;
+	Token op = null;
+}
+{
+	x = UnaryExpr()
+	( op = MulOp() y = UnaryExpr()
+		{
+			codegen.op2(x, op, y);
+		}
+	)*
+	{ return x; }
+}
+
+/* AddExpr = MulExpr { AddOp MulExpr } . */
+Attrib AddExpr() throws YAPLException :
+{
+	Attrib x, y;
+	Token op = null;
+}
+{
+	x = MulExpr()
+	( op = AddOp() y = MulExpr()
+		{
+			codegen.op2(x, op, y);
+		}
+	)*
+	{ return x; }
+}
+
+/* RelExpr = AddExpr [ RelOp AddExpr ] . */
+Attrib RelExpr() throws YAPLException :
+{
+	Attrib x, y;
+	Token op = null;
+}
+{
+	x = AddExpr()
+	[ op = RelOp() y = AddExpr()
+		{
+			codegen.relOp(x, op, y);
+		}
+	]
+	{ return x; }
+}
+
+/* EqualExpr = RelExpr [ EqualOp RelExpr ] . */
+Attrib EqualExpr() throws YAPLException :
+{
+	Attrib x, y;
+	Token op = null;
+}
+{
+	x = RelExpr()
+	[ op = EqualOp() y = RelExpr()
+		{
+			codegen.equalOp(x, op, y);
+		}
+	]
+	{ return x; }
+}
+
+/* CondAndExpr = EqualExpr { "And" EqualExpr } . */
+Attrib CondAndExpr() throws YAPLException :
+{
+	Attrib x, y;
+	Token op = null;
+}
+{
+	x = EqualExpr()
+	( op = <AND> y = EqualExpr()
+		{
+			codegen.op2(x, op, y);
+		}
+	)*
+	{ return x; }
+}
+
+/* Expr = CondAndExpr { "Or" CondAndExpr } . */
+Attrib Expr() throws YAPLException :
+{
+	Attrib x, y;
+	Token op = null;
+}
+{
+	(
+		x = CondAndExpr()
+		( op = <OR> y = CondAndExpr()
+		   {
+		        codegen.op2(x, op, y);
+		   }
+		)*
+	)
+	{
+	    return x;
+	}
+}
+
+/* ArgumentList = Expr { "," Expr } . */
+Attrib[] ArgumentList(Symbol proc) throws YAPLException :
+{
+    int argc = 1;
+    Symbol param = proc.getNextSymbol();      // first formal parameter
+    Attrib arg;
+    LinkedList<Attrib> argList = new LinkedList<Attrib>();
+    Type argType;
+}
+{
+    arg = Expr()
+    {
+        checkArgument(proc, argc, arg, param);
+        argList.add(arg);
+    }
+    ( <COMMA> arg = Expr()
+    {
+        argc++;
+        param = param.getNextSymbol();
+        checkArgument(proc, argc, arg, param);
+        argList.add(arg);
+    }
+    )*
+    {
+        return argList.toArray(new yapl.impl.Attrib[argc]);
+    }
+}
+
+/* ProcedureCall = ident "(" [ ArgumentList ] ")" . */
+Attrib ProcedureCall(boolean inExpr) throws YAPLException :
+{
+	Token tok;
+	Symbol sym;
+	Attrib[] argList = null;
+}
+{
+	tok = <IDENT>
+	{
+		sym = symboltable.lookup(tok.image);
+		if (sym == null)
+			throw new YAPLException(CompilerError.IdentNotDecl, tok);
+		if (sym.getKind() != Symbol.Procedure)
+			throw new YAPLException(CompilerError.SymbolIllegalUse, sym);
+		if (inExpr && sym.getType() == null)
+			throw new YAPLException(CompilerError.ProcNotFuncExpr, tok, sym);
+	}
+	<PAR_LEFT> [ argList = ArgumentList(sym) ] <PAR_RIGHT>
+	{
+		int nArgs = (argList == null) ? 0 : argList.length;
+		int nParams = 0;
+		for (Symbol s = sym.getNextSymbol(); s != null; s = s.getNextSymbol())
+			nParams++;
+		if (nArgs < nParams)
+			throw new YAPLException(CompilerError.TooFewArgs, sym);
+		return codegen.callProc(sym, argList);
+	}
+}
+
+/* Assignment = ident ":=" Expr . */
+void Assignment() throws YAPLException :
+{
+    Token tok;
+    Symbol sym;
+    Attrib lvalue, rvalue;
+}
+{
+    tok = <IDENT>
+    {
+        sym = symboltable.lookup(tok.image);
+        if (sym == null)
+            throw new YAPLException(CompilerError.IdentNotDecl, tok);
+        if (sym.getKind() != Symbol.Variable && sym.getKind() != Symbol.Parameter)
+            throw new YAPLException(CompilerError.SymbolIllegalUse, sym);
+        lvalue = new yapl.impl.Attrib(sym);
+    }
+    tok = <ASSIGN>
+    rvalue = Expr()
+    {
+        if (!lvalue.getType().isCompatible(rvalue.getType())) {
+            throw new YAPLException(CompilerError.TypeMismatchAssign, tok);
+        }
+        codegen.assign(lvalue, rvalue);
+    }
+}
+
+/* IfStatement = "If" Expr "Then" StatementList [ "Else" StatementList ] <ENDIF>. */
+void IfStatement() throws YAPLException :
+{
+	Attrib cond;		// condition expression
+	String elseLabel, endLabel;
+}
+{
+	<IF> cond = Expr()
+	{
+		if (!(cond.getType() instanceof BoolType))
+			throw new YAPLException(CompilerError.CondNotBool);
+		elseLabel = codegen.newLabel();
+		codegen.branchIfFalse(cond, elseLabel);
+	}
+	<THEN> StatementList()
+	{
+	  	endLabel = codegen.newLabel();
+	  	codegen.jump(endLabel);
+		codegen.assignLabel(elseLabel);
+	}		  
+	[ <ELSE> StatementList() ]
+	<ENDIF>
+	{
+	  	codegen.assignLabel(endLabel);
+	}
+}
+
+/* ReturnStatement = "Return" [ Expr ] . */
+void ReturnStatement() throws YAPLException :
+{
+    Attrib retval = null;
+    Symbol proc = symboltable.getNearestParentSymbol(Symbol.Procedure);
+}
+{
+    <RETURN>
+    [ retval = Expr()
+        {
+            if (proc == null)
+                throw new YAPLException(CompilerError.IllegalRetValMain);
+            Type retType = proc.getType();
+            if (retType == null)
+                throw new YAPLException(CompilerError.IllegalRetValProc, proc);
+            // suppress type checking when compiling run-time library (bootstrap == true)
+            if (!bootstrap && !retType.isCompatible(retval.getType()))
+                throw new YAPLException(CompilerError.InvalidReturnType, proc);
+        }
+    ]
+    {
+        if (proc != null) {
+            if (retval == null && proc.getType() != null)
+                throw new YAPLException(CompilerError.InvalidReturnType, proc);
+            proc.setReturnSeen(true);
+        }
+        codegen.returnFromProc(proc, retval);
+    }
+}
+
+/* WriteStatement = "Write" string . */
+void WriteStatement() throws YAPLException :
+{ Token tok; }
+{
+	<WRITE> tok = <STRING_LITERAL>
+    {
+        codegen.writeString(tok.image);
+    }
+}
+
+/* Statement = IfStatement | ReturnStatement
+ *           | WriteStatement | Assignment | ProcedureCall | Block .
+ */
+void Statement() throws YAPLException :
+{}
+{
+	IfStatement()
+	| ReturnStatement()
+	| WriteStatement()
+	| LOOKAHEAD(2) Assignment()
+	| ProcedureCall(false)
+	| Block()
+}
+
+/* StatementList = { Statement  ";" } . */
+void StatementList() throws YAPLException :
+{}
+{
+	( Statement() <SEMICOLON> )*
+}
+
+/* Block = { Decl } "Begin" StatementList "End" . */
+void Block() throws YAPLException :
+{}
+{
+	{
+		symboltable.openScope(false);
+	}
+	( Decl() )* <BEGIN> StatementList() <END>
+	{
+		symboltable.closeScope();
+	}
+}
+
+/* Type = "int" | "bool" . */
+Type Type() throws YAPLException :
+{
+    Token tok;
+    Symbol sym;
+}
+{
+    <INT> { return new IntType(); }
+    | <BOOL> { return new BoolType(); }
+}
+
+/* ReturnType = "void" | Type . */
+Type ReturnType() throws YAPLException :
+{
+    Type t = null;
+}
+{
+    (
+        < VOID > | t = Type()
+    )
+    {
+        return t;
+    }
+}
+
+/* ConstDecl = "Const" ident "=" Literal ";"  */
+void ConstDecl() throws YAPLException :
+{
+	Token tok;
+	Symbol sym;
+	Attrib attr;
+}
+{
+	<CONST>
+	tok = <IDENT>
+	{
+		sym = new yapl.impl.Symbol(Symbol.Constant, tok.image);
+		symboltable.addSymbol(sym);
+	}
+	<ASSIGN_CONST>
+	attr = Literal()
+	{
+		sym.setType(attr.getType());
+	}
+	<SEMICOLON>
+}
+
+/* VarDecl = Type ident { "," ident } ";" . */
+void VarDecl() throws YAPLException :
+{
+    Token tok;
+    Symbol sym;
+    int kind;
+    Type type;
+}
+{
+    type = Type()
+    tok = <IDENT>
+    {
+        kind = Symbol.Variable;
+        sym = new yapl.impl.Symbol(kind, tok.image);
+        sym.setType(type);
+        symboltable.addSymbol(sym);
+        codegen.allocVariable(sym);
+    }
+    ( <COMMA> tok = <IDENT>
+        {
+            sym = new yapl.impl.Symbol(kind, tok.image);
+            sym.setType(type);
+            symboltable.addSymbol(sym);
+            codegen.allocVariable(sym);
+        }
+    )*
+    <SEMICOLON>
+}
+
+/* Decl = "Declare" { ConstDecl | VarDecl }  */
+void Decl() throws YAPLException :
+{}
+{
+    <DECL> ( ConstDecl() | VarDecl() )*
+}
+
+/* FormalParam = Type ident . */
+Symbol FormalParam(Symbol prevSymbol) throws YAPLException :
+{
+    Token tok;
+    Symbol sym;
+    Type type;
+    boolean callByRef = true;
+}
+{
+    type = Type()
+    tok = <IDENT>
+    {	
+        sym = new yapl.impl.Symbol(Symbol.Parameter, tok.image);
+        sym.setType(type);
+        if (type instanceof IntType || type instanceof BoolType)
+            callByRef = false;
+        sym.setReference(callByRef);
+        symboltable.addSymbol(sym);
+        if (prevSymbol == null)
+            throw new YAPLException(CompilerError.Internal, tok);
+        prevSymbol.setNextSymbol(sym);
+        return sym;
+    }
+}
+
+/* FormalParamList = FormalParam { "," FormalParam } . */
+void FormalParamList(Symbol proc) throws YAPLException :
+{
+	Symbol sym;
+	int pos = 0;
+}
+{
+	sym = FormalParam(proc)
+	{
+	  	codegen.setParamOffset(sym, pos++);
+	}
+	(
+	  	<COMMA> sym = FormalParam(sym)
+	  	{
+	  	  	codegen.setParamOffset(sym, pos++);
+	  	}
+	)*
+}
+
+
+/* Procedure = "Procedure" ReturnType ident "(" [ FormalParamList ] ")"
+ *             Block ident ";" .
+ */
+void Procedure() throws YAPLException :
+{
+	Token tok;
+	Symbol sym;
+	Type returnType;
+}
+{
+	<PROC>
+	returnType = ReturnType()
+	tok = <IDENT>
+	{
+		sym = new yapl.impl.Symbol(Symbol.Procedure, tok.image);
+		sym.setType(returnType);
+		symboltable.addSymbol(sym);
+		symboltable.openScope(false);		// for formal parameters
+		symboltable.setParentSymbol(sym);   // link current scope to procedure
+	}
+	<PAR_LEFT> [ FormalParamList(sym) ] <PAR_RIGHT>
+	{
+		codegen.enterProc(sym);
+	}
+	Block()
+	{
+		if (returnType != null && !sym.getReturnSeen())
+			throw new YAPLException(CompilerError.MissingReturn, sym);
+		codegen.exitProc(sym);
+		symboltable.closeScope();
+	}
+	tok = <IDENT>
+	{
+		if (!sym.getName().equals(tok.image))
+			throw new YAPLException(CompilerError.EndIdentMismatch, tok, sym);
+	}
+	<SEMICOLON>
+}
+
+
+/* Program = "Program" ident { Decl | Procedure } "Begin" StatementList "End" ident "."  */
+void Program() throws YAPLException :
+{
+    Symbol sym;
+    Token tok;
+}
+{
+	{
+		symboltable.openScope(true);
+	}
+	<PROGRAM> tok = <IDENT>
+	{
+		progName = tok.image;
+		sym = new yapl.impl.Symbol(Symbol.Program, tok.image);
+		symboltable.addSymbol(sym);
+		symboltable.openScope(true);
+	}
+	( Decl() | Procedure() )*
+	<BEGIN>
+    {
+        codegen.enterProc(null);
+    }
+	StatementList() <END>
+	{
+        codegen.exitProc(null);
+	    symboltable.closeScope();
+	}
+	tok = <IDENT>
+    {
+		if (!progName.equals(tok.image))
+			throw new yapl.lib.YAPLException(yapl.lib.YAPLException.EndIdentMismatch, (yapl.interfaces.Token) tok, (yapl.interfaces.Symbol) sym);
+        symboltable.closeScope();
+    }
+	<DOT>
+	<EOF>
+}
+
+/* --------------- Predefined Procedures ------------------------------ */
+
+/* PredefProc = "Procedure" ReturnType ident "(" [ FormalParamList ] ")" ";" . */
+void PredefProc() throws YAPLException :
+{
+	Token tok;
+	Symbol sym;
+	Type returnType;
+}
+{
+	<PROC>
+    returnType = ReturnType()
+	tok = <IDENT>
+	{
+		sym = new yapl.impl.Symbol(Symbol.Procedure, tok.image);
+		sym.setType(returnType);
+		symboltable.addSymbol(sym);
+		symboltable.openScope(true);		// for formal parameters
+	}
+	<PAR_LEFT> [ FormalParamList(sym) ] <PAR_RIGHT>
+	{
+		symboltable.closeScope();
+	}
+	<SEMICOLON>
+}
+
+/* PredefDecl = ( PredefProc )* . */
+void PredefDecl() throws YAPLException :
+{}
+{
+	( PredefProc() )*
+	<EOF>
+}

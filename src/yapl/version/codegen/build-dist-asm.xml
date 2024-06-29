@@ -1,0 +1,90 @@
+<project name="YAPL Compiler - Code Generation" default="compile-java" basedir=".">
+	<description>
+		ANT build file for the YAPL compiler, code generating version, provided to students.
+		(C) AAU/ITEC, Mario Taschwer, 2021.
+	</description>
+
+	<!-- set global properties for this build -->
+	<property name="globalbasedir" location="../../../../"/>
+	<property file="${globalbasedir}/build-dist-asm.properties"/>
+
+	<!-- set local properties for this build -->
+	<property name="grammar" location="YAPL.jj"/>
+	<property name="mainclass" value="yapl.version.codegen.YAPL"/>
+
+	<!-- to compile runtime library, set "yapl-runtimelib-asm" to empty value -
+	     and make sure that compiler can handle 1-dimensional arrays! -->
+	<property name="yapl-runtimelib-asm" location="runtimelib.asm"/>
+	<property name="yapl-runtimelib-src" location="runtimelib.yapl"/>
+
+	<target name="init">
+		<mkdir dir="${build}" />
+	</target>
+
+	<target name="compile-javacc" depends="init" description="compile the grammar file">
+		<javacc
+	   		target="${grammar}"
+ 		  	javacchome="${javacc}"
+   			static="true"
+		/>
+	</target>
+
+	<target name="compile-java" depends="compile-javacc"
+        description="compile the source" >
+		<javac srcdir="${src}" destdir="${build}" debug="on" includeantruntime="false">
+			<include name="yapl/impl/*.java"/>
+			<include name="yapl/interfaces/*.java"/>
+			<include name="yapl/lib/*.java"/>
+			<include name="yapl/version/codegen/*.java"/>
+		</javac>
+	</target>
+
+	<target name="compile-yapl" depends="compile-java" description="runs the YAPL compiler">
+		<echo>Compiling ${yapl}</echo>
+		<java classname="${mainclass}" fork="true" output="${log}">
+			<classpath>
+				<pathelement location="${build}"/>
+				<pathelement path="${java.class.path}"/>
+			</classpath>
+			<sysproperty key="yapl.predefined.src" value="${yapl-predefined}"/>
+			<sysproperty key="yapl.predefined.asm" value="${asm-predefined}"/>
+			<sysproperty key="yapl.runtimelib.src" value="${yapl-runtimelib-src}"/>
+			<sysproperty key="yapl.runtimelib.asm" value="${yapl-runtimelib-asm}"/>
+			<jvmarg value="-enableassertions"/>
+			<arg value="-o"/>
+			<arg value="${outfile}"/>
+			<arg value="${yapl}"/>
+		</java>
+	</target>
+
+    <target name="run" depends="compile-yapl" description="runs the YAPL compiler"/>
+
+	<target name="exec-mars" depends="compile-yapl" description="executes generated MIPS assembler code using MARS">
+		<java jar="${mars-jar}" fork="true" output="${execlog}">
+			<arg value="nc" />
+			<arg value="sm" />
+			<arg value="${outfile}" />
+		</java>
+		<!-- Delete excessive line terminator from end of ${logfile} -->
+		<replaceregexp file="${execlog}" match="(\r)?\n$" replace="" flags="s"/>
+	</target>
+
+    <target name="eval" depends="exec-mars"
+        description="evaluate compiler by comparing 'execlog' to 'truefile'">
+        <fail message="output file is not correct: ${execlog}">
+            <condition>
+                <not>
+                    <filesmatch file1="${execlog}" file2="${truefile}" textfile="true"/>
+                </not>
+            </condition>
+        </fail>
+    </target>
+    
+	<target name="clean" description="clean up the source directory">
+		<delete>
+			<fileset dir="." includes="*.java"
+				excludes="CodeGen*.java ParseException.java Token.java TokenMgrError.java"/>
+		</delete>
+	</target>
+
+</project>

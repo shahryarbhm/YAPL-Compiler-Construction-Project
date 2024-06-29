@@ -1,0 +1,97 @@
+<project name="YAPL Compiler, student version" default="compile-java" basedir=".">
+	<description>
+    ANT build file for the YAPL compiler, provided to students.
+    Customize build-dist-asm.properties to your environment.
+    (C) AAU/ITEC, Mario Taschwer, 2021.
+	</description>
+
+    <!-- set global properties for this build -->
+    <property name="globalbasedir" location="."/>
+    <property file="build-dist-asm.properties"/>
+
+    <taskdef resource="net/sf/antcontrib/antlib.xml">
+        <classpath>
+            <pathelement location="${ant-contrib-jar}"/>
+        </classpath>
+    </taskdef>
+
+    <target name="mkdir" description="create directories needed for building">
+        <mkdir dir="${build}"/>
+    </target>
+
+	<target name="compile-ant-task" depends="mkdir">
+		<javac srcdir="${src}" destdir="${build}" includeantruntime="true">
+			<include name="yapl/ant/*.java"/>
+		</javac>
+		<typedef name="yaplbadmessage" classname="yapl.ant.YaplBadMessageCondition" classpath="${build}"/>
+	</target>
+		
+    <target name="compile-java" description="compile the YAPL compiler" depends="mkdir">
+        <ant dir="${src}/yapl/version/${version}" antfile="build-dist-asm.xml" target="compile-java" />
+    </target>
+
+    <target name="run" description="run the YAPL compiler" depends="compile-java">
+        <ant dir="${src}/yapl/version/${version}" antfile="build-dist-asm.xml" target="run" />
+    </target>
+
+    <target name="eval-compiler-msg" depends="compile-ant-task, run"
+        description="evaluate error/OK message of YAPL compiler">
+        <fail>
+            <condition>
+                <yaplbadmessage yapl="${yapl}" log="${log}"/>
+            </condition>
+        </fail>
+    </target>
+    
+    <target name="eval-all" description="evaluate all test cases for 'test-version'">
+        <var name="npassed" value="0"/>
+    	<var name="ntotal" value="0"/>
+        <for param="yapl">
+            <path>
+            	<fileset dir="testfiles/${test-version}" includes="*.yapl"/>
+            </path>
+            <sequential>
+                <trycatch>
+                    <try>
+                        <if>
+                            <equals arg1="${test-version}" arg2="codegen"/>
+                            <then>
+                                <ant dir="${src}/yapl/version/${version}" antfile="build-dist-asm.xml" target="eval">
+                                    <property name="yapl" value="@{yapl}"/>
+                                    <property name="log" value="@{yapl}.log"/>
+                                    <property name="outfile" value="@{yapl}.asm"/>
+                                    <property name="execlog" value="@{yapl}.execlog"/>
+                                    <property name="truefile" value="@{yapl}.true"/>
+                                </ant>
+                            </then>
+                            <else>
+                                <antcall target="eval-compiler-msg">
+                                    <param name="yapl" value="@{yapl}"/>
+                                    <param name="log" value="@{yapl}.log"/>
+                                </antcall>
+                            </else>
+                        </if>
+                        <echo>@{yapl}: PASSED</echo>
+                        <math result="npassed" operand1="${npassed}" operation="+" operand2="1" datatype="int"/>
+                    </try>
+                    <catch>
+                        <echo>@{yapl}: FAILED</echo>
+                    </catch>
+                </trycatch>
+                <math result="ntotal" operand1="${ntotal}" operation="+" operand2="1" datatype="int"/>
+            </sequential>
+        </for>
+        <echo>Tests passed: ${npassed}/${ntotal}</echo>
+    </target>
+
+    <target name="clean" description="clean up source and build directories">
+        <ant dir="${src}/yapl/version/${version}" antfile="build-dist-asm.xml" target="clean" />
+    </target>
+
+    <target name="dist-clean" description="remove all generated files" depends="clean">
+        <delete>
+            <fileset dir="testfiles" includes="*/*.log */*.asm */*.execlog"/>
+        </delete>
+    </target>
+
+</project>

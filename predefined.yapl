@@ -1,0 +1,8 @@
+/* Predefined procedures of the YAPL language */
+
+Procedure void writeint(int i);         /* write i to stdout */
+Procedure void writebool(bool b);       /* write b ("True" or "False") to stdout */
+Procedure void writeln();               /* write a newline character to stdout  */
+Procedure int readint();                /* read an integer value from stdin;
+                                           characters following the number up
+                                           to newline are ignored. */
