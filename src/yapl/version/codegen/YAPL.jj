@@ -484,15 +484,7 @@ void Assignment() throws YAPLException :
     Attrib lvalue, rvalue;
 }
 {
-    tok = <IDENT>
-    {
-        sym = symboltable.lookup(tok.image);
-        if (sym == null)
-            throw new YAPLException(CompilerError.IdentNotDecl, tok);
-        if (sym.getKind() != Symbol.Variable && sym.getKind() != Symbol.Parameter)
-            throw new YAPLException(CompilerError.SymbolIllegalUse, sym);
-        lvalue = new yapl.impl.Attrib(sym);
-    }
+    lvalue = Selector()
     tok = <ASSIGN>
     rvalue = Expr()
     {
