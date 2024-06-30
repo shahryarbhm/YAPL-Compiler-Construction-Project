@@ -1,0 +1,40 @@
+/* Quicksort implemented in YAPL.
+ * <expected result> OK
+ */
+Program test35
+
+Procedure void printNTime(int a)
+Declare
+    int i;
+Begin
+    i := 0;
+    While i < a Do
+        writeint(a);
+        Write " ";
+        i := i + 1;
+    EndWhile;
+    writeln();
+End printNTime;
+
+Procedure void init(int a)
+Declare
+    int i, j, k;
+Begin
+    i := 0; j := 20; k := -1;
+    While i < a Do
+        a := i + j;
+        i := i + 1;
+        j := ((j + 30) % 64) * k;
+        k := -k;
+    EndWhile;
+End init;
+
+Declare
+    Const ARRAYLEN = 10;
+    int a;
+Begin
+    init(a);
+    Write "Input Array: ";
+    printNTime(a);
+    writeln();
+End test35.
