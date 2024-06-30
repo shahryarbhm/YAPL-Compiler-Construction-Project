@@ -526,6 +526,30 @@ void IfStatement() throws YAPLException :
 	  	codegen.assignLabel(endLabel);
 	}
 }
+/* WhileStatement = "While" "(" Expr ")" Statement . */
+void WhileStatement() throws YAPLException :
+{
+  Attrib cond;        // condition expression
+  String startLabel, endLabel;
+}
+{
+  <WHILE> cond = Expr() 
+  <DO>
+  {
+    if (!(cond.getType() instanceof BoolType))
+      throw new YAPLException(CompilerError.CondNotBool);
+    startLabel = codegen.newLabel();
+    endLabel = codegen.newLabel();
+    codegen.assignLabel(startLabel);
+    codegen.branchIfFalse(cond, endLabel);
+  }
+  StatementList()
+  {
+    codegen.jump(startLabel);
+    codegen.assignLabel(endLabel);
+  }
+  <ENDWHILE>
+}
 
 /* ReturnStatement = "Return" [ Expr ] . */
 void ReturnStatement() throws YAPLException :
@@ -567,13 +591,14 @@ void WriteStatement() throws YAPLException :
     }
 }
 
-/* Statement = IfStatement | ReturnStatement
+/* Statement = IfStatement | WhileStatement |ReturnStatement
  *           | WriteStatement | Assignment | ProcedureCall | Block .
  */
 void Statement() throws YAPLException :
 {}
 {
 	IfStatement()
+	| WhileStatement()
 	| ReturnStatement()
 	| WriteStatement()
 	| LOOKAHEAD(2) Assignment()

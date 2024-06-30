@@ -1,0 +1,11 @@
+/* Type check test input.
+ * <expected result> OK
+ */
+Program test29
+Declare
+    int k;
+Begin
+    While k < 1 Do
+        Return;
+    EndWhile;
+End test29.
