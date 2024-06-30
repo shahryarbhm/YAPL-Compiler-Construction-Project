@@ -297,7 +297,7 @@ Attrib ArrayLengthExpr() throws YAPLException :
     )*
     {
         if (!(array.getType() instanceof ArrayType)) {
-            throw new YAPLException(CompilerError.SelectorNotArray);
+            throw new YAPLException(CompilerError.ArrayLenNotArray);
         }
         return codegen.arrayLength(array, dimensions);
     }
@@ -704,6 +704,7 @@ Attrib Selector() throws YAPLException :
     Symbol sym;
     Attrib attr;
     Attrib index;
+	Type currentType;
 }
 {
     tok = <IDENT>
@@ -712,15 +713,21 @@ Attrib Selector() throws YAPLException :
         if (sym == null)
             throw new YAPLException(CompilerError.IdentNotDecl, tok);
         attr = new yapl.impl.Attrib(sym);
+		        currentType = sym.getType();
     }
     (
         <BRACKET_LEFT> index = Expr() <BRACKET_RIGHT>
         {
             if (!(attr.getType() instanceof ArrayType)) {
+				System.out.println(attr.getType());
                 throw new YAPLException(CompilerError.SelectorNotArray);
             }
+			if (!(index.getType() instanceof IntType)) {
+				throw new YAPLException(CompilerError.BadArraySelector);
+			}
             codegen.arrayOffset(attr, index);
-            attr.setType((ArrayType)attr.getType());
+			currentType = ((ArrayType) currentType).getElementType();
+            attr.setType(currentType);
         }
     )*
     {
