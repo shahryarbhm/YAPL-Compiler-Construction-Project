@@ -86,4 +86,7 @@ public class ArrayType extends Type {
 		return buf.toString();
 	}
 
+	public Type getElementType() {
+		return base;
+	}
 }

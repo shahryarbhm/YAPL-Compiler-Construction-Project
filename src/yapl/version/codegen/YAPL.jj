@@ -19,6 +19,7 @@ import java.io.*;
 import java.util.Stack;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.ArrayList;
 
 public class YAPL {
     protected static Symboltable symboltable = new yapl.impl.Symboltable();
@@ -266,38 +267,41 @@ Attrib Literal() throws YAPLException :
 /* PrimaryExpr = Literal | "(" Expr ")" | ProcedureCall | ident . */
 Attrib PrimaryExpr() throws YAPLException :
 {
-	Token tok;
-	Symbol sym;
-	Attrib attr = null;
-	Attrib index;
+    Attrib attr;
 }
 {
-	( attr = Literal()
-	| <PAR_LEFT> attr = Expr() <PAR_RIGHT>
-	| LOOKAHEAD(2) attr = ProcedureCall(true)
-	| tok = <IDENT>
-		{
-			sym = symboltable.lookup(tok.image);
-			if (sym == null)
-				throw new YAPLException(CompilerError.IdentNotDecl, tok);
-			if (sym.getKind() == Symbol.Program || sym.getKind() == Symbol.Procedure)
-				throw new YAPLException(CompilerError.SymbolIllegalUse, sym);
-			attr = new yapl.impl.Attrib(sym);
-		}
-	)     (
-        <BRACKET_LEFT> index = Expr() <BRACKET_RIGHT>
-        {
-			if (!(attr.getType() instanceof ArrayType)) {
-            	throw new YAPLException(CompilerError.SelectorNotArray);
-			}
-			codegen.arrayOffset(attr, index);
-		}
-	)*
-	{
-	       return attr;
-	  }
+    ( attr = Literal()
+    | <PAR_LEFT> attr = Expr() <PAR_RIGHT>
+    | LOOKAHEAD(2) attr = ProcedureCall(true)
+    | attr = Selector()
+    | attr = ArrayCreationExpr()
+    | attr = ArrayLengthExpr()
+    )
+    {
+        return attr;
+    }
 }
 
+Attrib ArrayLengthExpr() throws YAPLException :
+{
+    Attrib array;
+    int dimensions = 0;
+}
+{
+    <SHARP> array = Selector()
+    (
+        <BRACKET_LEFT> Expr() <BRACKET_RIGHT>
+        {
+            dimensions++;
+        }
+    )*
+    {
+        if (!(array.getType() instanceof ArrayType)) {
+            throw new YAPLException(CompilerError.ArrayLenNotArray);
+        }
+        return codegen.arrayLength(array, dimensions);
+    }
+}
 /* UnaryExpr = [AddOp] PrimaryExpr . */
 Attrib UnaryExpr() throws YAPLException :
 {
@@ -480,15 +484,7 @@ void Assignment() throws YAPLException :
     Attrib lvalue, rvalue;
 }
 {
-    tok = <IDENT>
-    {
-        sym = symboltable.lookup(tok.image);
-        if (sym == null)
-            throw new YAPLException(CompilerError.IdentNotDecl, tok);
-        if (sym.getKind() != Symbol.Variable && sym.getKind() != Symbol.Parameter)
-            throw new YAPLException(CompilerError.SymbolIllegalUse, sym);
-        lvalue = new yapl.impl.Attrib(sym);
-    }
+    lvalue = Selector()
     tok = <ASSIGN>
     rvalue = Expr()
     {
@@ -630,20 +626,27 @@ void Block() throws YAPLException :
 Type Type() throws YAPLException :
 {
     Token tok;
-    Type elementType;
-    int dimensions = 0; // To keep track of array dimensions
+    Type baseType;
+    int dimensions = 0;
 }
 {
-    ( tok = <INT> { elementType = new IntType(); }
-    | tok = <BOOL> { elementType = new BoolType(); }
+    ( tok = <INT> { baseType = new IntType(); }
+    | tok = <BOOL> { baseType = new BoolType(); }
+    | tok = <IDENT> {  
+        Symbol typeSymbol = symboltable.lookup(tok.image);
+        if (typeSymbol == null || typeSymbol.getKind() != Symbol.Typename) {
+            throw new YAPLException(CompilerError.IdentNotDecl);
+        }
+        baseType = typeSymbol.getType();
+      }
     )
     ( <BRACKET_LEFT> <BRACKET_RIGHT> { dimensions++; } )*
     {
-        if (dimensions > 0) {
-            // If dimensions were specified, wrap the element type in an ArrayType
-            elementType = new ArrayType(elementType);
+        Type arrayType = baseType;
+        for (int i = 0; i < dimensions; i++) {
+            arrayType = new ArrayType(arrayType);
         }
-        return elementType;
+        return arrayType;
     }
 }
 /* ReturnType = "void" | Type . */
@@ -657,6 +660,127 @@ Type ReturnType() throws YAPLException :
     )
     {
         return t;
+    }
+}
+
+Attrib ArrayCreationExpr() throws YAPLException :
+{
+    Token typeToken;
+    List dimensions = new ArrayList();
+    Attrib expr;
+    Type elementType;
+}
+{
+    <NEW> 
+    ( typeToken = <INT> { elementType = new IntType(); }
+    | typeToken = <BOOL> { elementType = new BoolType(); }
+    )
+    (
+        <BRACKET_LEFT> expr = Expr() <BRACKET_RIGHT>
+        {
+            if (!(expr.getType() instanceof IntType)) {
+                throw new YAPLException(CompilerError.BadArraySelector);
+            }
+            dimensions.add(expr);
+        }
+    )+
+    {
+        // Create a multi-dimensional array type
+        Type arrayType = elementType;
+        for (int i = 0; i < dimensions.size(); i++) {
+            arrayType = new ArrayType(arrayType);
+        }
+        
+        // Generate code for array allocation
+        return codegen.allocArray((ArrayType) arrayType, dimensions);
+    }
+}
+
+void RecordDecl() throws YAPLException :
+{
+    Token tok;
+    Symbol recordSym;
+    RecordType recordType;
+    Type fieldType;
+}
+{
+    <RECORD> tok = <IDENT> {
+        // Create a new symbol for the record and its corresponding record type.
+        recordSym = new yapl.impl.Symbol(Symbol.Typename, tok.image);
+        recordType = new RecordType(recordSym);  // Ensure RecordType can accept a symbol if needed.
+        recordSym.setType(recordType);
+        symboltable.addSymbol(recordSym);
+        symboltable.openScope(false);  // Open a new scope for the fields.
+    }
+
+    // Repeatedly parse fields defined within the record.
+    // This block will keep reading type and identifier pairs until it encounters ENDRECORD.
+    (
+        fieldType = Type()  // Parse the type of the field.
+        tok = <IDENT> {  // Get the field's identifier.
+            Symbol fieldSym = new yapl.impl.Symbol(Symbol.Variable, tok.image);
+            fieldSym.setType(fieldType);
+            recordType.addField(fieldSym);  // Assuming RecordType has an addField method.
+            symboltable.addSymbol(fieldSym);
+        }
+        <SEMICOLON>  // Each field declaration ends with a semicolon.
+    )*
+
+    <ENDRECORD> 
+    {
+        symboltable.closeScope();  // Close the scope opened for the record's fields.
+    }
+    <SEMICOLON>
+}
+Attrib Selector() throws YAPLException :
+{
+    Token tok;
+    Symbol sym;
+    Attrib attr;
+    Attrib index;
+	Type currentType;
+}
+{
+    tok = <IDENT>
+    {
+        sym = symboltable.lookup(tok.image);
+        if (sym == null)
+            throw new YAPLException(CompilerError.IdentNotDecl, tok);
+        attr = new yapl.impl.Attrib(sym);
+		        currentType = sym.getType();
+    }
+
+    (
+        <DOT> tok = <IDENT> {
+            if (!(currentType instanceof RecordType)) {
+                throw new YAPLException(CompilerError.SelectorNotRecord);
+            }
+            RecordType recordType = (RecordType) currentType;
+            Symbol fieldSym = recordType.lookupField(tok.image);
+
+            if (fieldSym == null) {
+                throw new YAPLException(CompilerError.InvalidRecordField, tok,sym);
+            }
+            attr.setType(fieldSym.getType());
+            currentType = fieldSym.getType(); // Update current type to field's type
+        }
+        |
+        <BRACKET_LEFT> index = Expr() <BRACKET_RIGHT>
+        {
+            if (!(attr.getType() instanceof ArrayType)) {
+				System.out.println(attr.getType());
+                throw new YAPLException(CompilerError.SelectorNotArray);
+            }
+			if (!(index.getType() instanceof IntType)) {
+				throw new YAPLException(CompilerError.BadArraySelector);
+			}
+            codegen.arrayOffset(attr, index);
+			currentType = ((ArrayType) currentType).getElementType();
+            attr.setType(currentType);
+        }
+    )*
+    {
+        return attr;
     }
 }
 
@@ -715,7 +839,7 @@ void VarDecl() throws YAPLException :
 void Decl() throws YAPLException :
 {}
 {
-    <DECL> ( ConstDecl() | VarDecl() )*
+    <DECL> ( ConstDecl() | VarDecl() | RecordDecl() )*
 }
 
 /* FormalParam = Type ident . */
