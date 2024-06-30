@@ -288,7 +288,7 @@ Attrib PrimaryExpr() throws YAPLException :
         <BRACKET_LEFT> index = Expr() <BRACKET_RIGHT>
         {
 			if (!(attr.getType() instanceof ArrayType)) {
-				throw new YAPLException(YAPLException.Internal);
+            	throw new YAPLException(CompilerError.SelectorNotArray);
 			}
 			codegen.arrayOffset(attr, index);
 		}
