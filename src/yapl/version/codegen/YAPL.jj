@@ -590,17 +590,26 @@ void Block() throws YAPLException :
 	}
 }
 
-/* Type = "int" | "bool" . */
+/* Type = "int" | "bool" | Type "[]" . */
 Type Type() throws YAPLException :
 {
     Token tok;
-    Symbol sym;
+    Type elementType;
+    int dimensions = 0; // To keep track of array dimensions
 }
 {
-    <INT> { return new IntType(); }
-    | <BOOL> { return new BoolType(); }
+    ( tok = <INT> { elementType = new IntType(); }
+    | tok = <BOOL> { elementType = new BoolType(); }
+    )
+    ( <BRACKET_LEFT> <BRACKET_RIGHT> { dimensions++; } )*
+    {
+        if (dimensions > 0) {
+            // If dimensions were specified, wrap the element type in an ArrayType
+            elementType = new ArrayType(elementType,dimensions);
+        }
+        return elementType;
+    }
 }
-
 /* ReturnType = "void" | Type . */
 Type ReturnType() throws YAPLException :
 {

@@ -5,84 +5,85 @@ package yapl.lib;
  * A multi-dimensional array is represented recursively as a single-dimensional
  * array with an array base type.
  * 
+ * This class supports dimensions for multi-dimensional arrays.
+ * Each dimension is represented by an integer value.
+ * 
+ * Example usage:
+ * ArrayType arr = new ArrayType(baseType, 3, 4, 5);
+ * This creates a 3-dimensional array with dimensions 3x4x5.
+ * 
  * @author Mario Taschwer
  * @version $Id$
  */
 public class ArrayType extends Type {
 
-	/** 
-	 * The array length (number of elements).
-	 * A negative length means an undefined array length. 
-	 */
-	public int len = -1;
-	
+	/** The array dimensions. */
+	public int[] dimensions;
+
 	/** The element type. */
-	public Type base = null;
-	
+	public Type base;
+
 	/**
 	 * Create a new array type with undefined length.
-	 * @param base   the element (base) type.
+	 * 
+	 * @param base       the element (base) type.
+	 * @param dimensions the array dimensions.
 	 */
-	public ArrayType(Type base)
-	{
+	public ArrayType(Type base, int... dimensions) {
 		this.base = base;
-		this.len = -1;
+		this.dimensions = dimensions;
+		System.out.println("ArrayType: " + this.toString()); // Debug
 	}
-	
-	/** Create a new array type.
+
+	/**
+	 * Check if the given indices are valid.
 	 * 
-	 * @param len		the number of array elements.
-	 *                  A value <code>len &lt; 0</code> means an undefined array length.
+	 * @param indices the array indices to be checked.
+	 * @return <code>true</code> if the indices are valid.
 	 */
-	public ArrayType(int len)
-	{
-		this.len = len;
+	public boolean indicesAreValid(int... indices) {
+		if (indices.length != dimensions.length) {
+			return false;
+		}
+		for (int i = 0; i < indices.length; i++) {
+			if (indices[i] < 0 || indices[i] >= dimensions[i]) {
+				return false;
+			}
+		}
+		return true;
 	}
-	
-	/** Create a new array type.
-	 * 
-	 * @param base      the element (base) type.
-	 * @param len		the number of array elements.
-	 *                  A value <code>len &lt; 0</code> means an undefined array length.
-	 */
-	public ArrayType(Type base, int len)
-	{
-		this.base = base;
-		this.len = len;
-	}
-	
-	/** Check if the given index is valid.
-	 * 
-	 * @param index		the array index to be checked.
-	 * @return <code>true</code> if the index is valid.
-	 */
-	public boolean indexIsValid(int index) {
-		return index >= 0 && index < len;
-	}
-	
+
 	@Override
 	public boolean isCompatible(Type start, Type type) {
-		if (!(type instanceof ArrayType))
+		if (!(type instanceof ArrayType)) {
 			return false;
+		}
 		ArrayType other = (ArrayType) type;
-		return base.isCompatible(other.base) &&
-			(len < 0 || other.len < 0 || other.len == len);
+		if (dimensions.length != other.dimensions.length) {
+			return false;
+		}
+		for (int i = 0; i < dimensions.length; i++) {
+			if (dimensions[i] != other.dimensions[i]) {
+				return false;
+			}
+		}
+		return base.isCompatible(other.base);
 	}
-	
+
 	@Override
 	public boolean isReference() {
 		return true;
 	}
 
 	@Override
-	public String toString()
-	{
-		StringBuffer buf = new StringBuffer();
+	public String toString() {
+		StringBuilder buf = new StringBuilder();
 		buf.append(base.toString());
-		buf.append('[');
-		if (len >= 0)
-			buf.append(len);
-		buf.append(']');
+		for (int dimension : dimensions) {
+			buf.append('[');
+			buf.append(dimension);
+			buf.append(']');
+		}
 		return buf.toString();
 	}
 

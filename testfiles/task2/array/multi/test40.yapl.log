@@ -1,0 +1,5 @@
+ArrayType: Integer[1]
+ArrayType: Integer[2]
+ArrayType: Integer[2][2]
+YAPL compilation: [test40] ERROR 12 (line 11, column 5)
+illegal use of variable 'a'
