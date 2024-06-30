@@ -19,6 +19,7 @@ import java.io.*;
 import java.util.Stack;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.ArrayList;
 
 public class YAPL {
     protected static Symboltable symboltable = new yapl.impl.Symboltable();
@@ -266,28 +267,41 @@ Attrib Literal() throws YAPLException :
 /* PrimaryExpr = Literal | "(" Expr ")" | ProcedureCall | ident . */
 Attrib PrimaryExpr() throws YAPLException :
 {
-	Token tok;
-	Symbol sym;
-	Attrib attr = null;
+    Attrib attr;
 }
 {
-	( attr = Literal()
-	| <PAR_LEFT> attr = Expr() <PAR_RIGHT>
-	| LOOKAHEAD(2) attr = ProcedureCall(true)
-	| tok = <IDENT>
-		{
-			sym = symboltable.lookup(tok.image);
-			if (sym == null)
-				throw new YAPLException(CompilerError.IdentNotDecl, tok);
-			if (sym.getKind() == Symbol.Program || sym.getKind() == Symbol.Procedure)
-				throw new YAPLException(CompilerError.SymbolIllegalUse, sym);
-			attr = new yapl.impl.Attrib(sym);
-		}
-	) {
-	       return attr;
-	  }
+    ( attr = Literal()
+    | <PAR_LEFT> attr = Expr() <PAR_RIGHT>
+    | LOOKAHEAD(2) attr = ProcedureCall(true)
+    | attr = Selector()
+    | attr = ArrayCreationExpr()
+    | attr = ArrayLengthExpr()
+    )
+    {
+        return attr;
+    }
 }
 
+Attrib ArrayLengthExpr() throws YAPLException :
+{
+    Attrib array;
+    int dimensions = 0;
+}
+{
+    <SHARP> array = Selector()
+    (
+        <BRACKET_LEFT> Expr() <BRACKET_RIGHT>
+        {
+            dimensions++;
+        }
+    )*
+    {
+        if (!(array.getType() instanceof ArrayType)) {
+            throw new YAPLException(CompilerError.SelectorNotArray);
+        }
+        return codegen.arrayLength(array, dimensions);
+    }
+}
 /* UnaryExpr = [AddOp] PrimaryExpr . */
 Attrib UnaryExpr() throws YAPLException :
 {
@@ -615,15 +629,25 @@ void Block() throws YAPLException :
 	}
 }
 
-/* Type = "int" | "bool" . */
+/* Type = "int" | "bool" | Type "[]" . */
 Type Type() throws YAPLException :
 {
     Token tok;
-    Symbol sym;
+    Type baseType;
+    int dimensions = 0;
 }
 {
-    <INT> { return new IntType(); }
-    | <BOOL> { return new BoolType(); }
+    ( tok = <INT> { baseType = new IntType(); }
+    | tok = <BOOL> { baseType = new BoolType(); }
+    )
+    ( <BRACKET_LEFT> <BRACKET_RIGHT> { dimensions++; } )*
+    {
+        Type arrayType = baseType;
+        for (int i = 0; i < dimensions; i++) {
+            arrayType = new ArrayType(arrayType);
+        }
+        return arrayType;
+    }
 }
 
 /* ReturnType = "void" | Type . */
@@ -637,6 +661,70 @@ Type ReturnType() throws YAPLException :
     )
     {
         return t;
+    }
+}
+
+Attrib ArrayCreationExpr() throws YAPLException :
+{
+    Token typeToken;
+    List dimensions = new ArrayList();
+    Attrib expr;
+    Type elementType;
+}
+{
+    <NEW> 
+    ( typeToken = <INT> { elementType = new IntType(); }
+    | typeToken = <BOOL> { elementType = new BoolType(); }
+    )
+    (
+        <BRACKET_LEFT> expr = Expr() <BRACKET_RIGHT>
+        {
+            if (!(expr.getType() instanceof IntType)) {
+                throw new YAPLException(CompilerError.BadArraySelector);
+            }
+            dimensions.add(expr);
+        }
+    )+
+    {
+        // Create a multi-dimensional array type
+        Type arrayType = elementType;
+        for (int i = 0; i < dimensions.size(); i++) {
+            arrayType = new ArrayType(arrayType);
+        }
+        
+        // Generate code for array allocation
+        return codegen.allocArray((ArrayType) arrayType, dimensions);
+    }
+}
+
+
+Attrib Selector() throws YAPLException :
+{
+    Token tok;
+    Symbol sym;
+    Attrib attr;
+    Attrib index;
+}
+{
+    tok = <IDENT>
+    {
+        sym = symboltable.lookup(tok.image);
+        if (sym == null)
+            throw new YAPLException(CompilerError.IdentNotDecl, tok);
+        attr = new yapl.impl.Attrib(sym);
+    }
+    (
+        <BRACKET_LEFT> index = Expr() <BRACKET_RIGHT>
+        {
+            if (!(attr.getType() instanceof ArrayType)) {
+                throw new YAPLException(CompilerError.SelectorNotArray);
+            }
+            codegen.arrayOffset(attr, index);
+            attr.setType((ArrayType)attr.getType());
+        }
+    )*
+    {
+        return attr;
     }
 }
 
