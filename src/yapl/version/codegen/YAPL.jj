@@ -269,6 +269,7 @@ Attrib PrimaryExpr() throws YAPLException :
 	Token tok;
 	Symbol sym;
 	Attrib attr = null;
+	Attrib index;
 }
 {
 	( attr = Literal()
@@ -283,7 +284,16 @@ Attrib PrimaryExpr() throws YAPLException :
 				throw new YAPLException(CompilerError.SymbolIllegalUse, sym);
 			attr = new yapl.impl.Attrib(sym);
 		}
-	) {
+	)     (
+        <BRACKET_LEFT> index = Expr() <BRACKET_RIGHT>
+        {
+			if (!(attr.getType() instanceof ArrayType)) {
+				throw new YAPLException(YAPLException.Internal);
+			}
+			codegen.arrayOffset(attr, index);
+		}
+	)*
+	{
 	       return attr;
 	  }
 }
@@ -483,6 +493,7 @@ void Assignment() throws YAPLException :
     rvalue = Expr()
     {
         if (!lvalue.getType().isCompatible(rvalue.getType())) {
+			
             throw new YAPLException(CompilerError.TypeMismatchAssign, tok);
         }
         codegen.assign(lvalue, rvalue);
@@ -605,7 +616,7 @@ Type Type() throws YAPLException :
     {
         if (dimensions > 0) {
             // If dimensions were specified, wrap the element type in an ArrayType
-            elementType = new ArrayType(elementType,dimensions);
+            elementType = new ArrayType(elementType);
         }
         return elementType;
     }
