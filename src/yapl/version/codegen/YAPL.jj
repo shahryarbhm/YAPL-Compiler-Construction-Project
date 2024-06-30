@@ -631,6 +631,13 @@ Type Type() throws YAPLException :
 {
     ( tok = <INT> { baseType = new IntType(); }
     | tok = <BOOL> { baseType = new BoolType(); }
+    | tok = <IDENT> {  
+        Symbol typeSymbol = symboltable.lookup(tok.image);
+        if (typeSymbol == null || typeSymbol.getKind() != Symbol.Typename) {
+            throw new YAPLException(CompilerError.IdentNotDecl);
+        }
+        baseType = typeSymbol.getType();
+      }
     )
     ( <BRACKET_LEFT> <BRACKET_RIGHT> { dimensions++; } )*
     {
@@ -689,7 +696,42 @@ Attrib ArrayCreationExpr() throws YAPLException :
     }
 }
 
+void RecordDecl() throws YAPLException :
+{
+    Token tok;
+    Symbol recordSym;
+    RecordType recordType;
+    Type fieldType;
+}
+{
+    <RECORD> tok = <IDENT> {
+        // Create a new symbol for the record and its corresponding record type.
+        recordSym = new yapl.impl.Symbol(Symbol.Typename, tok.image);
+        recordType = new RecordType(recordSym);  // Ensure RecordType can accept a symbol if needed.
+        recordSym.setType(recordType);
+        symboltable.addSymbol(recordSym);
+        symboltable.openScope(false);  // Open a new scope for the fields.
+    }
 
+    // Repeatedly parse fields defined within the record.
+    // This block will keep reading type and identifier pairs until it encounters ENDRECORD.
+    (
+        fieldType = Type()  // Parse the type of the field.
+        tok = <IDENT> {  // Get the field's identifier.
+            Symbol fieldSym = new yapl.impl.Symbol(Symbol.Variable, tok.image);
+            fieldSym.setType(fieldType);
+            recordType.addField(fieldSym);  // Assuming RecordType has an addField method.
+            symboltable.addSymbol(fieldSym);
+        }
+        <SEMICOLON>  // Each field declaration ends with a semicolon.
+    )*
+
+    <ENDRECORD> 
+    {
+        symboltable.closeScope();  // Close the scope opened for the record's fields.
+    }
+    <SEMICOLON>
+}
 Attrib Selector() throws YAPLException :
 {
     Token tok;
@@ -707,7 +749,22 @@ Attrib Selector() throws YAPLException :
         attr = new yapl.impl.Attrib(sym);
 		        currentType = sym.getType();
     }
+
     (
+        <DOT> tok = <IDENT> {
+            if (!(currentType instanceof RecordType)) {
+                throw new YAPLException(CompilerError.SelectorNotRecord);
+            }
+            RecordType recordType = (RecordType) currentType;
+            Symbol fieldSym = recordType.lookupField(tok.image);
+
+            if (fieldSym == null) {
+                throw new YAPLException(CompilerError.InvalidRecordField, tok,sym);
+            }
+            attr.setType(fieldSym.getType());
+            currentType = fieldSym.getType(); // Update current type to field's type
+        }
+        |
         <BRACKET_LEFT> index = Expr() <BRACKET_RIGHT>
         {
             if (!(attr.getType() instanceof ArrayType)) {
@@ -782,7 +839,7 @@ void VarDecl() throws YAPLException :
 void Decl() throws YAPLException :
 {}
 {
-    <DECL> ( ConstDecl() | VarDecl() )*
+    <DECL> ( ConstDecl() | VarDecl() | RecordDecl() )*
 }
 
 /* FormalParam = Type ident . */
