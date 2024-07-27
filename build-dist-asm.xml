@@ -54,7 +54,7 @@
                 <trycatch>
                     <try>
                         <if>
-                            <equals arg1="${test-version}" arg2="codegen"/>
+                            <equals arg1="${test-version}" arg2="codegen_full"/>
                             <then>
                                 <ant dir="${src}/yapl/version/${version}" antfile="build-dist-asm.xml" target="eval">
                                     <property name="yapl" value="@{yapl}"/>

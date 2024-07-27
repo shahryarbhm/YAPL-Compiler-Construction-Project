@@ -529,22 +529,22 @@ void WhileStatement() throws YAPLException :
   String startLabel, endLabel;
 }
 {
+    {startLabel = codegen.newLabel();
+    codegen.assignLabel(startLabel);
+    }
   <WHILE> cond = Expr() 
-  <DO>
   {
     if (!(cond.getType() instanceof BoolType))
       throw new YAPLException(CompilerError.CondNotBool);
-    startLabel = codegen.newLabel();
     endLabel = codegen.newLabel();
-    codegen.assignLabel(startLabel);
     codegen.branchIfFalse(cond, endLabel);
   }
-  StatementList()
+  [<DO> StatementList()]
+  <ENDWHILE>
   {
     codegen.jump(startLabel);
     codegen.assignLabel(endLabel);
   }
-  <ENDWHILE>
 }
 
 /* ReturnStatement = "Return" [ Expr ] . */
@@ -686,7 +686,7 @@ Attrib ArrayCreationExpr() throws YAPLException :
     (
         <BRACKET_LEFT> expr = Expr() <BRACKET_RIGHT>
         {
-            if (!(expr.getType() instanceof IntType)) {
+            if (!(expr.getType() instanceof IntType) ) {
                 throw new YAPLException(CompilerError.BadArraySelector);
             }
             dimensions.add(expr);
@@ -694,6 +694,7 @@ Attrib ArrayCreationExpr() throws YAPLException :
     )*
     {
         // Create a multi-dimensional array type
+        System.err.println(dimensions.get(0).toString());
         if(dimensions.size() == 0 && elementType instanceof RecordType){
             return codegen.allocRecord((RecordType) elementType);
 
@@ -701,13 +702,19 @@ Attrib ArrayCreationExpr() throws YAPLException :
         if(dimensions.size() == 0){
             throw new YAPLException(CompilerError.InvalidNewType);
         }
+        
         Type arrayType = elementType;
         for (int i = 0; i < dimensions.size(); i++) {
             arrayType = new ArrayType(arrayType);
         }
+        for (int i = 0; i < dimensions.size(); i++) {
+            Attrib dimAttrib = (Attrib) dimensions.get(i);
+            codegen.storeArrayDim(i, dimAttrib);
+        }
+
         
         // Generate code for array allocation
-        return codegen.allocArray((ArrayType) arrayType, dimensions);
+        return codegen.allocArray((ArrayType) arrayType);
     }
 }
 
