@@ -63,6 +63,9 @@ public class Attrib implements yapl.interfaces.Attrib {
 		case Symbol.Parameter:
 			kind = MemoryOperand;
 			break;
+		case Symbol.Typename:
+			kind = RecordField;
+			break;
 		default:
 			throw new YAPLException(YAPLException.Internal);
 		}

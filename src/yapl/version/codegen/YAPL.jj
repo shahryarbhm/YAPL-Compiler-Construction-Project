@@ -274,7 +274,7 @@ Attrib PrimaryExpr() throws YAPLException :
     | <PAR_LEFT> attr = Expr() <PAR_RIGHT>
     | LOOKAHEAD(2) attr = ProcedureCall(true)
     | attr = Selector()
-    | attr = ArrayCreationExpr()
+    | LOOKAHEAD(2) attr = ArrayCreationExpr()
     | attr = ArrayLengthExpr()
     )
     {
@@ -674,6 +674,14 @@ Attrib ArrayCreationExpr() throws YAPLException :
     <NEW> 
     ( typeToken = <INT> { elementType = new IntType(); }
     | typeToken = <BOOL> { elementType = new BoolType(); }
+    | typeToken = <IDENT> {  
+        Symbol typeSymbol = symboltable.lookup(typeToken.image);
+        if (typeSymbol == null || typeSymbol.getKind() != Symbol.Typename) {
+            throw new YAPLException(CompilerError.IdentNotDecl);
+        }
+        elementType = typeSymbol.getType();
+      }
+    
     )
     (
         <BRACKET_LEFT> expr = Expr() <BRACKET_RIGHT>
@@ -683,9 +691,16 @@ Attrib ArrayCreationExpr() throws YAPLException :
             }
             dimensions.add(expr);
         }
-    )+
+    )*
     {
         // Create a multi-dimensional array type
+        if(dimensions.size() == 0 && elementType instanceof RecordType){
+            return codegen.allocRecord((RecordType) elementType);
+
+        }
+        if(dimensions.size() == 0){
+            throw new YAPLException(CompilerError.InvalidNewType);
+        }
         Type arrayType = elementType;
         for (int i = 0; i < dimensions.size(); i++) {
             arrayType = new ArrayType(arrayType);
